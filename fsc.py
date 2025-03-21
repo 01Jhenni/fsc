@@ -8,6 +8,161 @@ import shutil
 import zipfile
 import tempfile
 from io import BytesIO
+ 
+import streamlit as st
+import sqlite3
+import win32com.client as win32
+
+def enviar_email(destinatario, assunto, mensagem):
+    try:
+        outlook = win32.Dispatch('outlook.application')
+        mail = outlook.CreateItem(0)
+        mail.To = destinatario
+        mail.Subject = assunto
+        mail.Body = mensagem
+        mail.Send()
+        return True
+    except Exception as e:
+        return str(e)
+
+# Conectar ao banco de dados
+conn = sqlite3.connect("importacao02_register.db", check_same_thread=False)
+cursor = conn.cursor()
+
+# Recuperar erros pendentes
+cursor.execute("SELECT id, empresa, erro FROM registros WHERE status = 'Pendente'")
+erros_pendentes = cursor.fetchall()
+
+st.title("Registros com Erro Pendente")
+
+if erros_pendentes:
+    for erro in erros_pendentes:
+        erro_id, empresa, mensagem_erro = erro
+        st.error(f"Empresa: {empresa}\nErro: {mensagem_erro}")
+        
+        with st.form(f"form_email_{erro_id}"):
+            destinatario = st.text_input("E-mail do Cliente", key=f"email_{erro_id}")
+            assunto = st.text_input("Assunto", f"Erro na importação para {empresa}", key=f"assunto_{erro_id}")
+            mensagem = st.text_area("Mensagem", f"Prezado cliente, ocorreu um erro ao processar os registros da empresa {empresa}. Erro detectado: {mensagem_erro}", key=f"mensagem_{erro_id}")
+            enviar = st.form_submit_button("Enviar E-mail")
+            
+            if enviar:
+                resultado = enviar_email(destinatario, assunto, mensagem)
+                if resultado == True:
+                    st.success("E-mail enviado com sucesso!")
+                    cursor.execute("UPDATE registros SET status = 'Enviado' WHERE id = ?", (erro_id,))
+                    conn.commit()
+                else:
+                    st.error(f"Falha ao enviar e-mail: {resultado}")
+else:
+    st.success("Nenhum erro pendente encontrado.")
+
+conn.close()
+
+import streamlit as st
+import sqlite3
+import datetime
+import json
+import os
+
+# Configuração do banco de dados para o chat
+conn = sqlite3.connect("chat_messages.db", check_same_thread=False)
+cursor = conn.cursor()
+cursor.execute('''CREATE TABLE IF NOT EXISTS messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT,
+                    message TEXT,
+                    timestamp TEXT)''')
+conn.commit()
+
+# Função para salvar mensagens no banco de dados
+def save_message(username, message):
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cursor.execute("INSERT INTO messages (username, message, timestamp) VALUES (?, ?, ?)", (username, message, timestamp))
+    conn.commit()
+
+# Função para recuperar mensagens do banco de dados
+def get_messages():
+    cursor.execute("SELECT username, message, timestamp FROM messages ORDER BY id DESC LIMIT 20")
+    return cursor.fetchall()[::-1]
+
+# Tela de Login
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if not st.session_state.logged_in:
+    st.title("Login")
+    username = st.text_input("Nome de usuário")
+    password = st.text_input("Senha", type="password")
+    if st.button("Entrar"):
+        if password == "123@fsa":
+            st.session_state.logged_in = True
+            st.session_state.username = username
+            st.rerun()
+        else:
+            st.markdown('<div style="color: red; text-align: right;">Senha incorreta!</div>', unsafe_allow_html=True)
+    st.stop()
+
+# Interface principal
+st.title("Bem-vindo, " + st.session_state.username)
+
+# Adicionando um botão fixo no canto direito para abrir o chat
+chat_css = """
+    <style>
+        .chat-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 300px;
+            background-color: white;
+            border: 1px solid #ddd;
+            padding: 10px;
+            box-shadow: 2px 2px 10px rgba(0,0,0,0.2);
+            display: none;
+        }
+        .chat-button {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: #008CBA;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            font-size: 16px;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        .chat-open {
+            display: block !important;
+        }
+    </style>
+"""
+st.markdown(chat_css, unsafe_allow_html=True)
+
+# Botão de chat
+if "chat_open" not in st.session_state:
+    st.session_state.chat_open = False
+
+if st.button("💬", key="chat_toggle", help="Abrir Chat"):
+    st.session_state.chat_open = not st.session_state.chat_open
+    st.rerun()
+
+# Exibir chat somente se estiver aberto
+if st.session_state.chat_open:
+    st.markdown('<div class="chat-container chat-open">', unsafe_allow_html=True)
+    st.markdown("### Chat ao Vivo")
+    
+    messages = get_messages()
+    for user, msg, time in messages:
+        st.text(f"[{time}] {user}: {msg}")
+
+    new_message = st.text_input("Digite sua mensagem", key="chat_input")
+    if st.button("Enviar", key="send_button"):
+        if new_message.strip():
+            save_message(st.session_state.username, new_message)
+            st.rerun()
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
 conn = sqlite3.connect("importacao02_register.db", check_same_thread=False)
 cursor = conn.cursor()
@@ -183,6 +338,8 @@ elif menu == "Registros Importação":
                         conn.commit()
                         st.success(f"✅ Status do registro {row['id']} atualizado para 'Resolvido'.")
                         st.rerun()
+
+
 
 elif menu == "Indicadores":
     st.title("📈 Indicadores de Importação")
