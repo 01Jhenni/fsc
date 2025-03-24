@@ -9,55 +9,6 @@ import zipfile
 import tempfile
 from io import BytesIO
  
-import streamlit as st
-import sqlite3
-import win32com.client as win32
-
-def enviar_email(destinatario, assunto, mensagem):
-    try:
-        outlook = win32.Dispatch('outlook.application')
-        mail = outlook.CreateItem(0)
-        mail.To = destinatario
-        mail.Subject = assunto
-        mail.Body = mensagem
-        mail.Send()
-        return True
-    except Exception as e:
-        return str(e)
-
-# Conectar ao banco de dados
-conn = sqlite3.connect("importacao02_register.db", check_same_thread=False)
-cursor = conn.cursor()
-
-# Recuperar erros pendentes
-cursor.execute("SELECT id, empresa, erro FROM registros WHERE status = 'Pendente'")
-erros_pendentes = cursor.fetchall()
-
-st.title("Registros com Erro Pendente")
-
-if erros_pendentes:
-    for erro in erros_pendentes:
-        erro_id, empresa, mensagem_erro = erro
-        st.error(f"Empresa: {empresa}\nErro: {mensagem_erro}")
-        
-        with st.form(f"form_email_{erro_id}"):
-            destinatario = st.text_input("E-mail do Cliente", key=f"email_{erro_id}")
-            assunto = st.text_input("Assunto", f"Erro na importação para {empresa}", key=f"assunto_{erro_id}")
-            mensagem = st.text_area("Mensagem", f"Prezado cliente, ocorreu um erro ao processar os registros da empresa {empresa}. Erro detectado: {mensagem_erro}", key=f"mensagem_{erro_id}")
-            enviar = st.form_submit_button("Enviar E-mail")
-            
-            if enviar:
-                resultado = enviar_email(destinatario, assunto, mensagem)
-                if resultado == True:
-                    st.success("E-mail enviado com sucesso!")
-                    cursor.execute("UPDATE registros SET status = 'Enviado' WHERE id = ?", (erro_id,))
-                    conn.commit()
-                else:
-                    st.error(f"Falha ao enviar e-mail: {resultado}")
-else:
-    st.success("Nenhum erro pendente encontrado.")
-
-conn.close()
 
 import streamlit as st
 import sqlite3
